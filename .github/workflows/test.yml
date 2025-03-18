@@ -1,0 +1,46 @@
+# .github/workflows/test.yml
+name: Test Cloudflare WARP Setup
+
+on:
+  workflow_dispatch:
+
+env:
+  ORGANIZATION: ${{ vars.CLOUDFLARE_ORGANIZATION }}
+  CLIENT_ID: ${{ vars.CLOUDFLARE_ACCESS_CLIENT_ID }}
+  CLIENT_SECRET: ${{ secrets.CLOUDFLARE_CLIENT_SECRET }}
+
+jobs:
+  test-warp-setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Cloudflare WARP
+        run: |
+          sudo apt-get update
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update && sudo apt-get install cloudflare-warp -y
+
+      - name: Register and Connect
+        run: |
+          warp-cli --accept-tos register \
+            --auth-user "$CLIENT_ID" \
+            --auth-password "$CLIENT_SECRET" \
+            --organization "$ORGANIZATION"
+
+          warp-cli --accept-tos connect
+          sleep 5  # Wait for connection
+
+      - name: Verify Connection
+        run: |
+          warp-cli --accept-tos status
+          warp-cli --accept-tos registration show
+          curl -s https://www.cloudflare.com/cdn-cgi/trace | grep warp
+
+      - name: Cleanup (optional)
+        if: always()
+        run: |
+          warp-cli --accept-tos disconnect
+          sudo apt-get remove cloudflare-warp -y
